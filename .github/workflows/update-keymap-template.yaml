@@ -1,0 +1,60 @@
+name: Update Keymap Image
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+jobs:
+  update-readme-image:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Extract image URL from PR body
+        id: extract-url
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          IMAGE_URL=$(echo "$PR_BODY" | grep -oP '!\[#template-image\]\(\K[^\)]+' | head -n 1)
+
+          if [ -z "$IMAGE_URL" ]; then
+            echo "No template image found in PR body, skipping update"
+            exit 0
+          fi
+
+          echo "Found image URL: $IMAGE_URL"
+          echo "url=$IMAGE_URL" >> $GITHUB_OUTPUT
+
+      - name: Update README.md
+        if: steps.extract-url.outputs.url != ''
+        run: |
+          IMAGE_URL="${{ steps.extract-url.outputs.url }}"
+
+          sed -i "s|!\[template-image\](.*)|![template-image]($IMAGE_URL)|g" readme.md
+
+          if git diff --quiet readme.md; then
+            echo "No changes detected in README.md"
+            exit 0
+          fi
+
+      - name: Commit and push changes
+        if: steps.extract-url.outputs.url != ''
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          if ! git diff --quiet readme.md; then
+            git add readme.md
+          git commit -m "docs: Update keymap image from PR #${{ github.event.pull_request.number }}"
+            git push origin master
+            echo "README.md updated successfully"
+          else
+            echo "No changes to commit"
+          fi
